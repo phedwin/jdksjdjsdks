@@ -8,9 +8,9 @@
 #include <unistd.h>
 
 static char *password;
-#define MODE 1
 
-static struct termios original;
+const struct termios original;
+
 void disableLocalFlags(int fd, struct termios *tp, int options, int mode, ...);
 
 // this should switch between stdin & -f flag that takes an extra file arg
@@ -44,13 +44,18 @@ int passRoutine(char *password) {
 	return ret;
 }
 
+void resetTermFlags() {
+	// if there's a typeahead buffer, do not interfere
+	tcsetattr(STDIN_FILENO, TCSADRAIN, &original);
+}
+
 static char *filename;
 // you have 3 attempts at getting your password right
 void main(int argc, char **argv) {
 	struct termios tp;
 	int attempts = 3;
 
-	disableLocalFlags(STDIN_FILENO, &tp, TCSAFLUSH, 2, ECHO, ICANON);
+	disableLocalFlags(STDIN_FILENO, &tp, TCSAFLUSH, 1, ECHO);
 
 	int opt = getopt(argc, argv, "f:");
 	switch (opt) {
@@ -77,7 +82,7 @@ void main(int argc, char **argv) {
 			attempts = 3;
 	}
 	// stty sane
-	tcsetattr(STDIN_FILENO, TCSANOW, &original);
+	resetTermFlags();
 
 	free(txt);
 }
@@ -87,7 +92,7 @@ void disableLocalFlags(int fd, struct termios *tp, int options, int mode, ...) {
 		return;
 
 	if (tcgetattr(fd, tp) == -1)
-		goto term_err;
+		return;
 	va_list args;
 	int k, flags = 0;
 	va_start(args, mode);
@@ -97,9 +102,5 @@ void disableLocalFlags(int fd, struct termios *tp, int options, int mode, ...) {
 
 	tp->c_lflag &= ~flags;
 	if (tcsetattr(fd, options, tp) == -1)
-		goto term_err;
-
-term_err:
-	perror("term");
-	return;
+		return;
 }
